@@ -1,0 +1,8 @@
+node_modules
+.env
+.next
+.git
+.agents
+package-lock.json
+uploads
+skills-lock.json

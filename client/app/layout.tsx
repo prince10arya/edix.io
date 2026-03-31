@@ -7,13 +7,13 @@ import Providers from './providers';
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
 export const metadata: Metadata = {
-  title: 'Mini Eraser — AI-First Technical Design Workspace',
+  title: 'Dr. Draw — AI Technical Design Workspace',
   description:
     'Draw architecture diagrams, write markdown notes, and generate system designs with AI. The developer-focused design canvas.',
   keywords: ['system design', 'architecture diagram', 'AI diagram', 'developer tool', 'canvas'],
   openGraph: {
-    title: 'Mini Eraser',
-    description: 'AI-First Technical Design Workspace for Developers',
+    title: 'Dr. Draw',
+    description: 'AI Technical Design Workspace for Developers',
     type: 'website',
   },
 };

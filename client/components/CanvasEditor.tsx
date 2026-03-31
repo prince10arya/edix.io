@@ -1,70 +1,80 @@
 'use client';
 
-import React, { useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useWorkspaceStore } from '@/store/workspaceStore';
-import { Tldraw, useEditor, TLRecord } from 'tldraw';
+import { Tldraw, createTLStore, defaultShapeUtils, getSnapshot, loadSnapshot } from 'tldraw';
 import 'tldraw/tldraw.css';
 
-export default function CanvasEditor() {
+// Keyed wrapper ensures Editor properly resets active state when switching workspaces
+export default function CanvasEditorWrapper() {
+  const { currentWorkspace } = useWorkspaceStore();
+  if (!currentWorkspace) return null;
+
+  return <CanvasEditor key={currentWorkspace._id as string} />;
+}
+
+function CanvasEditor() {
   const { currentWorkspace, updateCanvasData } = useWorkspaceStore();
   
-  const handleMount = useCallback((editor: ReturnType<typeof useEditor>) => {
-    // Mount complete - editor is ready
-    if (!editor) return;
-
-    // Load initial data if it exists
+  const [store] = useState(() => {
+    let initialData = undefined;
+    
+    // Safely parse out the snapshot if it exists
     if (currentWorkspace?.canvasData?.tlDrawData) {
-      try {
-        const rawStore = currentWorkspace.canvasData.tlDrawData;
-        const records = Object.values(rawStore) as TLRecord[];
-        
-        // Filter out instance-specific ephemeral state that crashes Tldraw on mount
-        const blockList = ['instance', 'instance_page_state', 'pointer', 'user', 'user_document', 'user_presence'];
-        const persistables = records.filter(r => !blockList.includes(r?.typeName));
-
-        if (persistables.length > 0) {
-           editor.store.loadSnapshot({
-             store: Object.fromEntries(persistables.map(r => [r.id, r])) as any,
-             schema: editor.store.schema.serialize()
-           });
+      const rawData = currentWorkspace.canvasData.tlDrawData as any;
+      if (rawData && typeof rawData === 'object' && Object.keys(rawData).length > 0) {
+        // Map the payload directly to how Tldraw expects it
+        if (rawData.document || rawData.store) {
+           initialData = rawData;
         }
-      } catch (e) {
-        console.error('Failed to load canvas snapshot:', e);
       }
     }
 
-    // Subscribe to changes to trigger autosave
-    editor.store.listen((entry) => {
-      // Ignore presence changes
+    try {
+      // Create the store WITH the initial payload natively injected to bypass all post-mount loading crashes
+      return createTLStore({ 
+         shapeUtils: defaultShapeUtils,
+         initialData 
+      });
+    } catch (e) {
+      console.error('Failed to parse saved canvas layout. Generating clean workspace.', e);
+      return createTLStore({ shapeUtils: defaultShapeUtils });
+    }
+  });
+
+  // 2. Track changes after mount Reactively via useEffect on the store
+  useEffect(() => {
+    // Listen to changes for debounced workspace persistence
+    const unsubscribe = store.listen((entry) => {
       if (entry.source !== 'user') return;
       
       try {
-        const allRecords = editor.store.allRecords();
-        const blockList = ['instance', 'instance_page_state', 'pointer', 'user', 'user_document', 'user_presence'];
-        const recordsToSave = allRecords.filter(r => !blockList.includes(r?.typeName));
+        // Use native getSnapshot to preserve the exactly format loadSnapshot expects
+        const snapshot = getSnapshot(store);
         
         updateCanvasData({
           nodes: [],
           edges: [],
-          tlDrawData: Object.fromEntries(recordsToSave.map(r => [r.id, r])) as unknown as Record<string, unknown>
+          tlDrawData: snapshot as unknown as Record<string, unknown>
         });
       } catch(e) {
-         // Gracefully handle unmounts
+         // Silently handle fast unmount interrupts
       }
     }, { scope: 'document', source: 'user' });
 
-  }, [currentWorkspace?.canvasData?.tlDrawData, updateCanvasData]);
+    return () => unsubscribe();
+  }, [store, updateCanvasData]);
 
   if (!currentWorkspace) return null;
 
   return (
     <div className="w-full h-full bg-dark-bg canvas-bg tldraw-wrapper relative rounded-lg border border-dark-border overflow-hidden">
       <Tldraw 
+        store={store}
         components={{ 
             PageMenu: null,
             NavigationPanel: null,
         }}
-        onMount={handleMount} 
       />
     </div>
   );
